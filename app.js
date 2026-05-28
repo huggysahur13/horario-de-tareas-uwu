@@ -80,8 +80,14 @@
   }
 
   function allAnnouncements() {
-    const user = loadUserAnnouncements();
-    return [...user, ...baseAnnouncements];
+    const user = loadUserAnnouncements().map((a) => ({ ...a, _source: "user" }));
+    const base = baseAnnouncements.map((a) => ({ ...a, _source: "base" }));
+    const toTime = (x) => {
+      const raw = String(x?.createdAt ?? "");
+      const t = Date.parse(raw);
+      return Number.isFinite(t) ? t : 0;
+    };
+    return [...user, ...base].sort((a, b) => toTime(b) - toTime(a));
   }
 
   function loadTasks() {
@@ -499,14 +505,37 @@
       .map(
         (a) => `
       <article class="rounded-2xl border border-school-border bg-school-panel/70 p-5 shadow-card transition hover:border-sky-500/20">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">${escapeHtml(a.tag)}</span>
-          <h3 class="text-lg font-semibold text-white">${escapeHtml(a.title)}</h3>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">${escapeHtml(a.tag)}</span>
+            <h3 class="min-w-0 text-lg font-semibold text-white">${escapeHtml(a.title)}</h3>
+          </div>
+          ${
+            a._source === "user" && a.id
+              ? `<button type="button" class="announcement-delete-btn inline-flex items-center gap-2 rounded-xl border border-school-border bg-school-navy/40 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-red-500/40 hover:text-white" data-announcement-delete="${escapeHtml(
+                  a.id
+                )}" aria-label="Eliminar anuncio">
+                  <span aria-hidden="true">🗑️</span>
+                  <span>Eliminar</span>
+                </button>`
+              : ""
+          }
         </div>
         <p class="mt-2 text-sm leading-relaxed text-slate-400">${escapeHtml(a.body)}</p>
       </article>`
       )
       .join("");
+
+    container.querySelectorAll("[data-announcement-delete]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-announcement-delete");
+        if (!id) return;
+        const next = loadUserAnnouncements().filter((x) => x.id !== id);
+        saveUserAnnouncements(next);
+        showToast("Anuncio eliminado");
+        renderAnnouncements();
+      });
+    });
 
     const home = document.getElementById("homeAnnouncementsList");
     if (home) {
@@ -848,16 +877,96 @@
   }
 
   function initFab() {
-    document.getElementById("fabAdd")?.addEventListener("click", () => {
-      const go = (view, focusId) => {
-        const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
-        btn?.dispatchEvent(new Event("click"));
-        setTimeout(() => document.getElementById(focusId)?.focus(), 0);
-      };
+    const fab = document.getElementById("fabAdd");
+    if (!fab) return;
 
-      if (currentView === "exams") return go("exams", "examSubject");
-      if (currentView === "tasks") return go("tasks", "taskTitle");
-      return go("tasks", "taskTitle");
+    const closeMenu = () => {
+      const panel = document.getElementById("fabMenu");
+      const backdrop = document.getElementById("fabMenuBackdrop");
+      panel?.classList.add("hidden");
+      backdrop?.classList.add("hidden");
+      fab.setAttribute("aria-expanded", "false");
+    };
+
+    const openMenu = () => {
+      let backdrop = document.getElementById("fabMenuBackdrop");
+      if (!backdrop) {
+        backdrop = document.createElement("button");
+        backdrop.type = "button";
+        backdrop.id = "fabMenuBackdrop";
+        backdrop.className = "fixed inset-0 z-[65] hidden bg-black/35 backdrop-blur-[1px]";
+        backdrop.setAttribute("aria-label", "Cerrar menú");
+        backdrop.addEventListener("click", closeMenu);
+        document.body.appendChild(backdrop);
+      }
+
+      let panel = document.getElementById("fabMenu");
+      if (!panel) {
+        panel = document.createElement("div");
+        panel.id = "fabMenu";
+        panel.className =
+          "fixed bottom-40 right-5 z-[66] hidden w-[min(280px,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-school-border bg-school-panel/90 shadow-card backdrop-blur-md";
+        panel.innerHTML = `
+          <div class="px-4 py-3">
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Agregar</p>
+          </div>
+          <div class="grid gap-1 px-2 pb-2">
+            <button type="button" class="fab-action group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-school-navy/40" data-fab-target="tasks" data-fab-focus="taskTitle">
+              <span class="grid h-9 w-9 place-items-center rounded-xl border border-school-border/60 bg-school-navy/40 text-base transition group-hover:border-emerald-500/40">📋</span>
+              <span class="min-w-0">
+                <span class="block text-sm font-semibold text-white">Agregar tarea</span>
+                <span class="block text-xs text-slate-500">Descripción, materia y fecha</span>
+              </span>
+            </button>
+            <button type="button" class="fab-action group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-school-navy/40" data-fab-target="exams" data-fab-focus="examSubject">
+              <span class="grid h-9 w-9 place-items-center rounded-xl border border-school-border/60 bg-school-navy/40 text-base transition group-hover:border-sky-500/40">🧾</span>
+              <span class="min-w-0">
+                <span class="block text-sm font-semibold text-white">Agregar examen</span>
+                <span class="block text-xs text-slate-500">Materia, tema y fecha</span>
+              </span>
+            </button>
+            <button type="button" class="fab-action group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-school-navy/40" data-fab-target="announcements" data-fab-focus="announcementTitle">
+              <span class="grid h-9 w-9 place-items-center rounded-xl border border-school-border/60 bg-school-navy/40 text-base transition group-hover:border-emerald-500/40">📣</span>
+              <span class="min-w-0">
+                <span class="block text-sm font-semibold text-white">Agregar anuncio</span>
+                <span class="block text-xs text-slate-500">Publica un aviso para todos</span>
+              </span>
+            </button>
+          </div>
+        `;
+        document.body.appendChild(panel);
+
+        panel.querySelectorAll(".fab-action").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const target = btn.getAttribute("data-fab-target") || "tasks";
+            const focusId = btn.getAttribute("data-fab-focus") || "";
+            closeMenu();
+            window.location.hash = `#${target}`;
+            setTimeout(() => {
+              if (target === "announcements") initAnnouncementsComposer();
+              document.getElementById(focusId)?.focus();
+            }, 0);
+          });
+        });
+      }
+
+      backdrop.classList.remove("hidden");
+      panel.classList.remove("hidden");
+      fab.setAttribute("aria-expanded", "true");
+    };
+
+    fab.setAttribute("aria-haspopup", "true");
+    fab.setAttribute("aria-expanded", "false");
+
+    fab.addEventListener("click", () => {
+      const panel = document.getElementById("fabMenu");
+      const open = panel && !panel.classList.contains("hidden");
+      if (open) closeMenu();
+      else openMenu();
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeMenu();
     });
   }
 
