@@ -6,6 +6,7 @@
   const THEME_KEY = "schoolfix_theme";
   const PROFILE_KEY = "schoolfix_profile_v1";
   const ANNOUNCEMENTS_KEY = "announcements";
+  const SCHEDULE_KEY = "schedule";
   let currentProfile = null;
   let currentView = "home";
   let showToastTimeoutId = null;
@@ -19,6 +20,9 @@
   };
 
   let classesToday = [];
+
+  const scheduleDays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+  const schedulePeriods = 8;
 
   const examSeed = [
     { subject: "Matemáticas", date: "2026-05-15", topic: "Álgebra y funciones", completed: false },
@@ -198,6 +202,360 @@
     });
     saveAnnouncements(unique);
     return unique;
+  }
+
+  function loadSchedule() {
+    try {
+      const raw = localStorage.getItem(SCHEDULE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveSchedule(schedule) {
+    localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
+  }
+
+  function softColors() {
+    return [
+      "#34d399", // emerald
+      "#60a5fa", // blue
+      "#a78bfa", // violet
+      "#fb923c", // orange
+      "#f472b6", // pink
+      "#fbbf24", // amber
+      "#22d3ee", // cyan
+      "#c084fc", // purple
+    ];
+  }
+
+  function pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function normalizeCell(cell) {
+    if (!cell || typeof cell !== "object") return { name: "", color: "" };
+    return {
+      name: String(cell.name ?? "").trim(),
+      color: String(cell.color ?? "").trim(),
+    };
+  }
+
+  function buildEmptySchedule() {
+    const grid = {};
+    scheduleDays.forEach((d) => {
+      grid[d] = Array.from({ length: schedulePeriods }, () => ({ name: "", color: "" }));
+    });
+    return { days: scheduleDays, periods: schedulePeriods, grid };
+  }
+
+  function generateRandomWeeklySchedule() {
+    const subjects = [
+      "Matemáticas",
+      "Lengua y Literatura",
+      "Historia",
+      "Ciencias",
+      "Inglés",
+      "Física",
+      "Química",
+      "Biología",
+      "Geografía",
+      "Educación Física",
+      "Arte",
+      "Tecnología",
+    ];
+
+    const palette = softColors();
+    const subjectColor = new Map();
+    const colorFor = (name) => {
+      const key = String(name || "").trim() || "Clase";
+      if (subjectColor.has(key)) return subjectColor.get(key);
+      const used = new Set(Array.from(subjectColor.values()));
+      const available = palette.filter((c) => !used.has(c));
+      const chosen = pick(available.length ? available : palette);
+      subjectColor.set(key, chosen);
+      return chosen;
+    };
+
+    const schedule = buildEmptySchedule();
+    scheduleDays.forEach((day) => {
+      for (let p = 0; p < schedulePeriods; p += 1) {
+        const s = pick(subjects);
+        schedule.grid[day][p] = { name: s, color: colorFor(s) };
+      }
+    });
+    return schedule;
+  }
+
+  function ensureSchedule() {
+    const loaded = loadSchedule();
+    if (
+      loaded &&
+      Array.isArray(loaded.days) &&
+      loaded.days.length === scheduleDays.length &&
+      loaded.grid &&
+      typeof loaded.grid === "object"
+    ) {
+      // normalize cells
+      scheduleDays.forEach((d) => {
+        const col = Array.isArray(loaded.grid[d]) ? loaded.grid[d] : [];
+        loaded.grid[d] = Array.from({ length: schedulePeriods }, (_, i) => normalizeCell(col[i]));
+      });
+      loaded.periods = schedulePeriods;
+      loaded.days = scheduleDays;
+      saveSchedule(loaded);
+      return loaded;
+    }
+    const fresh = generateRandomWeeklySchedule();
+    saveSchedule(fresh);
+    return fresh;
+  }
+
+  function fgFor(bg) {
+    const c = String(bg || "").replace("#", "");
+    if (c.length !== 6) return "#0b1220";
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq >= 160 ? "#0b1220" : "#0b1220";
+  }
+
+  function scheduleRows() {
+    const rows = [];
+    let period = 1;
+    for (let i = 1; i <= schedulePeriods; i += 1) {
+      rows.push({ type: "period", label: `Periodo ${period}`, periodIndex: period - 1 });
+      if (i === 3 || i === 6) rows.push({ type: "break", label: "Receso" });
+      period += 1;
+    }
+    return rows;
+  }
+
+  function openScheduleEditor({ day, periodIndex, initial }) {
+    const existing = initial || { name: "", color: "" };
+    let modal = document.getElementById("scheduleEditor");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "scheduleEditor";
+      modal.className = "fixed inset-0 z-[80] hidden items-center justify-center bg-black/60 p-4 backdrop-blur-sm";
+      modal.innerHTML = `
+        <div class="w-full max-w-md rounded-2xl border border-school-border bg-school-panel p-5 shadow-card">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-semibold text-white">Editar clase</h3>
+              <p id="scheduleEditorMeta" class="mt-1 text-sm text-slate-400"></p>
+            </div>
+            <button type="button" id="scheduleEditorClose" class="grid h-9 w-9 place-items-center rounded-xl border border-school-border bg-school-navy/40 text-slate-300 transition hover:text-white" aria-label="Cerrar">✕</button>
+          </div>
+
+          <div class="mt-4 grid gap-3">
+            <div>
+              <label for="scheduleEditorName" class="block text-xs font-medium text-slate-400">Materia</label>
+              <input id="scheduleEditorName" type="text"
+                class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white outline-none transition focus:border-emerald-500/40 focus:ring-2 focus:ring-emerald-500/20"
+                placeholder="Escribe el nombre de la clase" />
+            </div>
+
+            <div>
+              <p class="text-xs font-medium text-slate-400">Color</p>
+              <div id="scheduleEditorColors" class="mt-2 flex flex-wrap gap-2"></div>
+            </div>
+
+            <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" id="scheduleEditorClear"
+                class="rounded-xl border border-school-border bg-school-navy/40 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-red-500/40 hover:text-white">
+                Limpiar
+              </button>
+              <button type="button" id="scheduleEditorSave"
+                class="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:from-emerald-500 hover:to-emerald-400">
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const meta = document.getElementById("scheduleEditorMeta");
+    const nameInput = document.getElementById("scheduleEditorName");
+    const colorsWrap = document.getElementById("scheduleEditorColors");
+
+    const palette = softColors();
+    let chosen = existing.color || pick(palette);
+
+    if (meta) meta.textContent = `${day} · Periodo ${periodIndex + 1}`;
+    if (nameInput) nameInput.value = existing.name || "";
+    if (colorsWrap) {
+      colorsWrap.innerHTML = palette
+        .map(
+          (c) => `
+          <button type="button" class="schedule-color-btn grid h-9 w-9 place-items-center rounded-xl border border-school-border transition hover:border-white/20" data-color="${c}" style="background:${c}">
+            <span class="text-[10px] font-black text-school-navy ${c === chosen ? "" : "opacity-0"}">✓</span>
+          </button>`
+        )
+        .join("");
+      colorsWrap.querySelectorAll("[data-color]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          chosen = btn.getAttribute("data-color") || chosen;
+          colorsWrap.querySelectorAll("[data-color]").forEach((b) => {
+            const mark = b.querySelector("span");
+            const active = (b.getAttribute("data-color") || "") === chosen;
+            if (mark) mark.classList.toggle("opacity-0", !active);
+          });
+        });
+      });
+    }
+
+    const close = () => {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+    const open = () => {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setTimeout(() => nameInput?.focus(), 0);
+    };
+
+    const closeBtn = document.getElementById("scheduleEditorClose");
+    closeBtn?.addEventListener("click", close, { once: true });
+    modal.addEventListener(
+      "click",
+      (e) => {
+        if (e.target === modal) close();
+      },
+      { once: true }
+    );
+
+    document.getElementById("scheduleEditorClear")?.addEventListener(
+      "click",
+      () => {
+        if (nameInput) nameInput.value = "";
+        chosen = pick(palette);
+        colorsWrap?.querySelectorAll("[data-color]").forEach((b) => {
+          const mark = b.querySelector("span");
+          const active = (b.getAttribute("data-color") || "") === chosen;
+          if (mark) mark.classList.toggle("opacity-0", !active);
+        });
+      },
+      { once: true }
+    );
+
+    document.getElementById("scheduleEditorSave")?.addEventListener(
+      "click",
+      () => {
+        const name = String(nameInput?.value ?? "").replace(/\s+/g, " ").trim();
+        const cell = { name, color: name ? chosen : "" };
+        const schedule = ensureSchedule();
+        schedule.grid[day][periodIndex] = cell;
+        saveSchedule(schedule);
+        renderWeeklySchedule();
+        close();
+        showToast("Horario actualizado");
+      },
+      { once: true }
+    );
+
+    open();
+  }
+
+  function renderWeeklySchedule() {
+    const host = document.getElementById("weeklySchedule");
+    if (!host) return;
+    const schedule = ensureSchedule();
+
+    const rows = scheduleRows();
+    const table = `
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[720px] border-separate border-spacing-2">
+          <thead>
+            <tr>
+              <th class="w-28 rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Periodo</th>
+              ${scheduleDays
+                .map(
+                  (d) =>
+                    `<th class="rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">${d}</th>`
+                )
+                .join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map((r) => {
+                if (r.type === "break") {
+                  return `
+                    <tr>
+                      <td class="rounded-xl border border-school-border bg-school-navy/30 px-3 py-3 text-xs font-semibold text-slate-500">${r.label}</td>
+                      ${scheduleDays
+                        .map(
+                          () =>
+                            `<td class="rounded-xl border border-school-border bg-school-navy/30 px-3 py-3 text-xs font-semibold text-slate-500/80">${r.label}</td>`
+                        )
+                        .join("")}
+                    </tr>
+                  `;
+                }
+
+                const pi = r.periodIndex;
+                return `
+                  <tr>
+                    <td class="rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-sm font-semibold text-slate-300">${r.label}</td>
+                    ${scheduleDays
+                      .map((d) => {
+                        const cell = normalizeCell(schedule.grid?.[d]?.[pi]);
+                        const bg = cell.color || "";
+                        const name = cell.name || "—";
+                        const style = bg ? `background:${bg}; color:${fgFor(bg)};` : "";
+                        const baseCls =
+                          "schedule-cell group relative min-h-[54px] rounded-xl border border-school-border px-3 py-3 text-sm font-semibold transition hover:border-sky-500/30 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
+                        const emptyCls = bg ? "" : "bg-school-panel/50 text-slate-400";
+                        return `
+                          <td>
+                            <button type="button" class="${baseCls} ${emptyCls} w-full text-left"
+                              data-schedule-day="${escapeHtml(d)}" data-schedule-period="${pi}" style="${style}">
+                              <span class="block truncate">${escapeHtml(name)}</span>
+                              <span class="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-white/0 transition group-hover:ring-white/10"></span>
+                            </button>
+                          </td>
+                        `;
+                      })
+                      .join("")}
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-xs text-slate-500">Tip: toca una celda para editar. El horario se guarda automáticamente.</p>
+    `;
+
+    host.innerHTML = table;
+    host.querySelectorAll("[data-schedule-day]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const day = btn.getAttribute("data-schedule-day");
+        const p = Number(btn.getAttribute("data-schedule-period"));
+        if (!day || !Number.isFinite(p)) return;
+        const sched = ensureSchedule();
+        openScheduleEditor({ day, periodIndex: p, initial: normalizeCell(sched.grid[day][p]) });
+      });
+    });
+  }
+
+  function initScheduleUI() {
+    document.getElementById("resetScheduleBtn")?.addEventListener("click", () => {
+      localStorage.removeItem(SCHEDULE_KEY);
+      const fresh = generateRandomWeeklySchedule();
+      saveSchedule(fresh);
+      renderWeeklySchedule();
+      showToast("Horario reseteado");
+    });
+    renderWeeklySchedule();
   }
 
   function loadTasks() {
@@ -502,22 +860,9 @@
   }
 
   function renderClasses() {
-    const list = document.getElementById("classesList");
+    // Compat: sección "Clases de hoy" removida; mantenemos solo la fecha.
     const dateEl = document.getElementById("sidebarDate");
     if (dateEl) dateEl.textContent = formatDisplayDate(todayISO());
-    if (!list) return;
-    list.innerHTML = classesToday
-      .map(
-        (c) => `
-      <li class="flex gap-3 rounded-xl border border-school-border/60 bg-school-navy/50 p-3 transition hover:border-sky-500/25">
-        <span class="shrink-0 font-mono text-xs font-semibold text-sky-400">${c.time}</span>
-        <div class="min-w-0">
-          <p class="font-medium text-white">${escapeHtml(c.name)}</p>
-          <p class="text-xs text-slate-500">Aula ${escapeHtml(c.room)}</p>
-        </div>
-      </li>`
-      )
-      .join("");
   }
 
   function renderExams() {
@@ -1217,6 +1562,7 @@
     classesToday = generateRandomSchedule();
     addRandomAnnouncementsOnBoot();
     renderClasses();
+    initScheduleUI();
     renderExams();
     renderAnnouncements();
     initAnnouncementsComposer();
