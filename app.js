@@ -178,6 +178,24 @@
       const nameInput = document.getElementById("studentName");
       const idInput = document.getElementById("studentId");
 
+      const sanitizeName = (value) =>
+        String(value ?? "")
+          .replace(/[0-9]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const sanitizeStudentId = (value) => String(value ?? "").replace(/\D/g, "").trim();
+
+      nameInput?.addEventListener("input", () => {
+        const next = sanitizeName(nameInput.value);
+        if (nameInput.value !== next) nameInput.value = next;
+      });
+
+      idInput?.addEventListener("input", () => {
+        const next = sanitizeStudentId(idInput.value);
+        if (idInput.value !== next) idInput.value = next;
+      });
+
       showProfileModal();
 
       const focusFirst = () => {
@@ -187,9 +205,25 @@
 
       const onSubmit = (e) => {
         e.preventDefault();
-        const name = String(nameInput?.value ?? "").trim();
-        const studentId = String(idInput?.value ?? "").trim();
-        if (!name || !studentId) return;
+        const name = sanitizeName(nameInput?.value);
+        const studentId = sanitizeStudentId(idInput?.value);
+
+        if (nameInput) nameInput.value = name;
+        if (idInput) idInput.value = studentId;
+
+        if (!name) {
+          nameInput?.setCustomValidity("Escribe tu nombre sin números.");
+          nameInput?.reportValidity();
+          return;
+        }
+        nameInput?.setCustomValidity("");
+
+        if (!studentId) {
+          idInput?.setCustomValidity("La matrícula debe ser solo números.");
+          idInput?.reportValidity();
+          return;
+        }
+        idInput?.setCustomValidity("");
 
         const profile = { name, studentId };
         currentProfile = profile;

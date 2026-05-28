@@ -345,6 +345,9 @@
               type="text"
               required
               autocomplete="name"
+              inputmode="text"
+              pattern="^[^\d]+$"
+              title="El nombre no debe contener números."
               placeholder="Ej. María López"
               class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
             />
@@ -358,6 +361,8 @@
               type="text"
               required
               inputmode="numeric"
+              pattern="^\d+$"
+              title="La matrícula solo debe contener números."
               autocomplete="off"
               placeholder="Ej. 20261234"
               class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
