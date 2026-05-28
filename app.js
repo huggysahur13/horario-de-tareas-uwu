@@ -178,7 +178,9 @@
       const nameInput = document.getElementById("studentName");
       const idInput = document.getElementById("studentId");
 
-      const sanitizeName = (value) =>
+      const sanitizeNameLive = (value) => String(value ?? "").replace(/[0-9]/g, "");
+
+      const sanitizeNameSubmit = (value) =>
         String(value ?? "")
           .replace(/[0-9]/g, "")
           .replace(/\s+/g, " ")
@@ -187,7 +189,7 @@
       const sanitizeStudentId = (value) => String(value ?? "").replace(/\D/g, "").trim();
 
       nameInput?.addEventListener("input", () => {
-        const next = sanitizeName(nameInput.value);
+        const next = sanitizeNameLive(nameInput.value);
         if (nameInput.value !== next) nameInput.value = next;
       });
 
@@ -205,7 +207,7 @@
 
       const onSubmit = (e) => {
         e.preventDefault();
-        const name = sanitizeName(nameInput?.value);
+        const name = sanitizeNameSubmit(nameInput?.value);
         const studentId = sanitizeStudentId(idInput?.value);
 
         if (nameInput) nameInput.value = name;
