@@ -5,6 +5,7 @@
   const EXAMS_KEY = "schoolfix_exams_v1";
   const THEME_KEY = "schoolfix_theme";
   const PROFILE_KEY = "schoolfix_profile_v1";
+  const ANNOUNCEMENTS_KEY = "schoolfix_announcements_v1";
   let currentProfile = null;
   let currentView = "home";
   let showToastTimeoutId = null;
@@ -17,12 +18,7 @@
     return `${y}-${m}-${day}`;
   };
 
-  const classesToday = [
-    { time: "08:00", name: "Matemáticas", room: "A-12" },
-    { time: "09:30", name: "Historia", room: "B-04" },
-    { time: "11:00", name: "Ciencias", room: "Lab 2" },
-    { time: "12:30", name: "Inglés", room: "C-08" },
-  ];
+  let classesToday = [];
 
   const examSeed = [
     { subject: "Matemáticas", date: "2026-05-15", topic: "Álgebra y funciones", completed: false },
@@ -30,7 +26,7 @@
     { subject: "Biología", date: "2026-05-22", topic: "Célula y genética", completed: false },
   ];
 
-  const announcements = [
+  const baseAnnouncements = [
     {
       title: "Reunión de padres — 12 de mayo",
       body: "Sesión informativa de evaluación trimestral en el salón de actos a las 17:00.",
@@ -46,7 +42,47 @@
       body: "El viernes 16 de mayo se promueve el uso de material reciclado; consulta la circular en el aula virtual.",
       tag: "Convocatoria",
     },
+    {
+      title: "Taller gratuito: Técnicas de estudio",
+      body: "Este jueves a las 13:30 en el aula multimedia. Cupo limitado; inscripciones en coordinación.",
+      tag: "Taller",
+    },
+    {
+      title: "Semana de ciencias: feria de proyectos",
+      body: "Presenta tu proyecto el próximo miércoles. Habrá premios a innovación y trabajo en equipo.",
+      tag: "Académico",
+    },
+    {
+      title: "Recordatorio: credencial visible",
+      body: "Por seguridad, porta tu credencial durante toda la jornada. Si la perdiste, repórtala hoy.",
+      tag: "Aviso",
+    },
+    {
+      title: "Club de programación: reunión de bienvenida",
+      body: "Lunes 16:00 en Lab 1. Trae tu laptop si tienes; habrá retos para principiantes y avanzados.",
+      tag: "Club",
+    },
   ];
+
+  function loadUserAnnouncements() {
+    try {
+      const raw = localStorage.getItem(ANNOUNCEMENTS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveUserAnnouncements(list) {
+    localStorage.setItem(ANNOUNCEMENTS_KEY, JSON.stringify(list));
+  }
+
+  function allAnnouncements() {
+    const user = loadUserAnnouncements();
+    return [...user, ...baseAnnouncements];
+  }
 
   function loadTasks() {
     try {
@@ -119,6 +155,75 @@
     list = examSeed.map((e) => ({ ...e, id: generateId() }));
     saveExams(list);
     return list;
+  }
+
+  function generateRandomSchedule() {
+    const subjects = [
+      "Matemáticas",
+      "Lengua y Literatura",
+      "Historia",
+      "Ciencias",
+      "Inglés",
+      "Física",
+      "Química",
+      "Biología",
+      "Geografía",
+      "Educación Física",
+      "Arte",
+      "Tecnología",
+    ];
+
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const pickManyUnique = (arr, n) => {
+      const pool = [...arr];
+      const out = [];
+      while (pool.length && out.length < n) {
+        const idx = Math.floor(Math.random() * pool.length);
+        out.push(pool.splice(idx, 1)[0]);
+      }
+      return out;
+    };
+
+    const room = () => {
+      const buildings = ["A", "B", "C", "D"];
+      const b = pick(buildings);
+      const num = String(1 + Math.floor(Math.random() * 20)).padStart(2, "0");
+      const extra = Math.random() < 0.22 ? `-${1 + Math.floor(Math.random() * 3)}` : "";
+      return `${b}-${num}${extra}`;
+    };
+
+    const specialRooms = ["Lab 1", "Lab 2", "Aula Multimedia", "Sala de Cómputo", "Gimnasio"];
+    const pickRoom = (subject) => {
+      if (subject === "Educación Física") return "Gimnasio";
+      if (["Física", "Química", "Biología", "Ciencias"].includes(subject)) return Math.random() < 0.55 ? pick(specialRooms) : room();
+      if (["Tecnología"].includes(subject)) return Math.random() < 0.65 ? "Sala de Cómputo" : room();
+      return room();
+    };
+
+    const startHour = 7 + Math.floor(Math.random() * 3); // 07–09
+    const startMinute = Math.random() < 0.5 ? 0 : 30;
+    const blocks = 3 + Math.floor(Math.random() * 3); // 3–5
+    const selectedSubjects = pickManyUnique(subjects, blocks);
+
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const addMinutes = (h, m, delta) => {
+      const total = h * 60 + m + delta;
+      return { h: Math.floor(total / 60), m: total % 60 };
+    };
+
+    const out = [];
+    let t = { h: startHour, m: startMinute };
+    for (let i = 0; i < blocks; i += 1) {
+      const subject = selectedSubjects[i];
+      out.push({
+        time: `${pad2(t.h)}:${pad2(t.m)}`,
+        name: subject,
+        room: pickRoom(subject),
+      });
+      // clase 60 min + recreo 10 min (excepto al final)
+      t = addMinutes(t.h, t.m, i === blocks - 1 ? 60 : 70);
+    }
+    return out;
   }
 
   function formatDisplayDate(iso) {
@@ -218,10 +323,20 @@
           nameInput?.reportValidity();
           return;
         }
+        if (name.length < 10 || name.length > 60) {
+          nameInput?.setCustomValidity("El nombre debe tener entre 10 y 60 caracteres.");
+          nameInput?.reportValidity();
+          return;
+        }
         nameInput?.setCustomValidity("");
 
         if (!studentId) {
           idInput?.setCustomValidity("La matrícula debe ser solo números.");
+          idInput?.reportValidity();
+          return;
+        }
+        if (studentId.length < 10 || studentId.length > 20) {
+          idInput?.setCustomValidity("La matrícula debe tener entre 10 y 20 dígitos.");
           idInput?.reportValidity();
           return;
         }
@@ -379,7 +494,8 @@
   function renderAnnouncements() {
     const container = document.getElementById("announcementsList");
     if (!container) return;
-    container.innerHTML = announcements
+    const list = allAnnouncements();
+    container.innerHTML = list
       .map(
         (a) => `
       <article class="rounded-2xl border border-school-border bg-school-panel/70 p-5 shadow-card transition hover:border-sky-500/20">
@@ -394,7 +510,7 @@
 
     const home = document.getElementById("homeAnnouncementsList");
     if (home) {
-      home.innerHTML = announcements
+      home.innerHTML = list
         .slice(0, 2)
         .map(
           (a) => `
@@ -408,6 +524,74 @@
         )
         .join("");
     }
+  }
+
+  function initAnnouncementsComposer() {
+    const view = document.getElementById("view-announcements");
+    const container = document.getElementById("announcementsList");
+    if (!view || !container) return;
+    if (document.getElementById("announcementComposer")) return;
+
+    const wrap = document.createElement("section");
+    wrap.id = "announcementComposer";
+    wrap.className = "rounded-2xl border border-school-border bg-school-panel/40 p-4 shadow-card";
+    wrap.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-base font-semibold text-white">Agregar anuncio</h2>
+        <p class="text-xs text-slate-500">Se guarda en este navegador.</p>
+      </div>
+      <form id="announcementForm" class="mt-3 grid gap-3 sm:grid-cols-2">
+        <div class="sm:col-span-2">
+          <label for="announcementTitle" class="block text-xs font-medium text-slate-400">Título</label>
+          <input id="announcementTitle" name="title" type="text" required
+            class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
+            placeholder="Ej. Cambio de salón en 2°B" />
+        </div>
+        <div>
+          <label for="announcementTag" class="block text-xs font-medium text-slate-400">Etiqueta</label>
+          <input id="announcementTag" name="tag" type="text" required
+            class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
+            placeholder="Aviso" />
+        </div>
+        <div>
+          <label for="announcementBody" class="block text-xs font-medium text-slate-400">Descripción</label>
+          <input id="announcementBody" name="body" type="text" required
+            class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
+            placeholder="Escribe el contenido del anuncio" />
+        </div>
+        <div class="sm:col-span-2">
+          <button type="submit"
+            class="w-full rounded-xl bg-gradient-to-r from-sky-600 to-sky-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-900/30 transition hover:from-sky-500 hover:to-sky-400 hover:shadow-sky-500/20 sm:w-auto sm:px-8">
+            Publicar anuncio
+          </button>
+        </div>
+      </form>
+    `;
+
+    // Insert composer after the "Urgente" card (before list).
+    container.parentElement?.insertBefore(wrap, container);
+
+    const form = document.getElementById("announcementForm");
+    form?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = String(document.getElementById("announcementTitle")?.value ?? "").trim();
+      const tag = String(document.getElementById("announcementTag")?.value ?? "").trim();
+      const body = String(document.getElementById("announcementBody")?.value ?? "").trim();
+      if (!title || !tag || !body) return;
+
+      const user = loadUserAnnouncements();
+      user.unshift({
+        id: generateId(),
+        title,
+        tag,
+        body,
+        createdAt: new Date().toISOString(),
+      });
+      saveUserAnnouncements(user);
+      form.reset();
+      showToast("Anuncio agregado");
+      renderAnnouncements();
+    });
   }
 
   function escapeHtml(s) {
@@ -721,9 +905,11 @@
     const profile = await ensureProfileIfMissing();
     seedTasksIfEmpty();
     seedExamsIfEmpty();
+    classesToday = generateRandomSchedule();
     renderClasses();
     renderExams();
     renderAnnouncements();
+    initAnnouncementsComposer();
     initForm();
     initExamForm();
     initTheme();

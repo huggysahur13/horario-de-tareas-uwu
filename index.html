@@ -150,7 +150,7 @@
                 name="title"
                 type="text"
                 required
-                placeholder="Ej. Resolver ejercicios 1–10"
+                placeholder=""
                 class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -161,7 +161,7 @@
                 name="subject"
                 type="text"
                 required
-                placeholder="Matemáticas"
+                placeholder=""
                 class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
               />
             </div>
@@ -348,7 +348,9 @@
               inputmode="text"
               pattern="^[^\d]+$"
               title="El nombre no debe contener números."
-              placeholder="Ingresar nombre"
+              minlength="10"
+              maxlength="60"
+              placeholder="Ingresa tu nombre"
               class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
             />
           </div>
@@ -363,8 +365,10 @@
               inputmode="numeric"
               pattern="^\d+$"
               title="La matrícula solo debe contener números."
+              minlength="10"
+              maxlength="20"
               autocomplete="off"
-              placeholder="Ingresar matrícula"
+              placeholder="Ingresa tu matrícula"
               class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
