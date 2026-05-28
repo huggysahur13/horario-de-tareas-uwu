@@ -5,7 +5,7 @@
   const EXAMS_KEY = "schoolfix_exams_v1";
   const THEME_KEY = "schoolfix_theme";
   const PROFILE_KEY = "schoolfix_profile_v1";
-  const ANNOUNCEMENTS_KEY = "schoolfix_announcements_v1";
+  const ANNOUNCEMENTS_KEY = "announcements";
   let currentProfile = null;
   let currentView = "home";
   let showToastTimeoutId = null;
@@ -26,45 +26,30 @@
     { subject: "Biología", date: "2026-05-22", topic: "Célula y genética", completed: false },
   ];
 
-  const baseAnnouncements = [
+  const defaultAnnouncements = [
     {
-      title: "Reunión de padres — 12 de mayo",
-      body: "Sesión informativa de evaluación trimestral en el salón de actos a las 17:00.",
+      title: "Reunión informativa de evaluación",
+      body: "Hoy 17:00 en el salón de actos. Se revisarán fechas de entrega y criterios de evaluación.",
       tag: "Evento",
     },
     {
       title: "Biblioteca: horario extendido",
-      body: "Hasta final de curso la biblioteca permanecerá abierta los martes hasta las 19:00.",
+      body: "Martes y jueves hasta las 19:00. Recuerda llevar credencial para préstamo de libros.",
       tag: "Servicios",
     },
     {
-      title: "Día sin mochila",
-      body: "El viernes 16 de mayo se promueve el uso de material reciclado; consulta la circular en el aula virtual.",
+      title: "Convocatoria: concurso de carteles",
+      body: "Tema: cuidado del agua. Entrega en prefectura antes del viernes 14:00.",
       tag: "Convocatoria",
     },
     {
-      title: "Taller gratuito: Técnicas de estudio",
-      body: "Este jueves a las 13:30 en el aula multimedia. Cupo limitado; inscripciones en coordinación.",
+      title: "Taller de técnicas de estudio",
+      body: "Jueves 13:30 en aula multimedia. Cupo limitado; registra tu asistencia en coordinación.",
       tag: "Taller",
-    },
-    {
-      title: "Semana de ciencias: feria de proyectos",
-      body: "Presenta tu proyecto el próximo miércoles. Habrá premios a innovación y trabajo en equipo.",
-      tag: "Académico",
-    },
-    {
-      title: "Recordatorio: credencial visible",
-      body: "Por seguridad, porta tu credencial durante toda la jornada. Si la perdiste, repórtala hoy.",
-      tag: "Aviso",
-    },
-    {
-      title: "Club de programación: reunión de bienvenida",
-      body: "Lunes 16:00 en Lab 1. Trae tu laptop si tienes; habrá retos para principiantes y avanzados.",
-      tag: "Club",
     },
   ];
 
-  function loadUserAnnouncements() {
+  function loadAnnouncements() {
     try {
       const raw = localStorage.getItem(ANNOUNCEMENTS_KEY);
       if (!raw) return [];
@@ -75,19 +60,144 @@
     }
   }
 
-  function saveUserAnnouncements(list) {
+  function saveAnnouncements(list) {
     localStorage.setItem(ANNOUNCEMENTS_KEY, JSON.stringify(list));
   }
 
-  function allAnnouncements() {
-    const user = loadUserAnnouncements().map((a) => ({ ...a, _source: "user" }));
-    const base = baseAnnouncements.map((a) => ({ ...a, _source: "base" }));
-    const toTime = (x) => {
-      const raw = String(x?.createdAt ?? "");
-      const t = Date.parse(raw);
-      return Number.isFinite(t) ? t : 0;
+  function toEpoch(value) {
+    const raw = String(value ?? "");
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  function tagStyles(tag) {
+    const t = String(tag || "Aviso");
+    const map = {
+      Evento: "bg-sky-500/15 text-sky-300 border-sky-500/25",
+      Servicios: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
+      Convocatoria: "bg-violet-500/15 text-violet-300 border-violet-500/25",
+      Taller: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+      "Académico": "bg-blue-500/15 text-blue-300 border-blue-500/25",
+      Aviso: "bg-slate-500/15 text-slate-300 border-slate-500/25",
+      Club: "bg-pink-500/15 text-pink-300 border-pink-500/25",
     };
-    return [...user, ...base].sort((a, b) => toTime(b) - toTime(a));
+    return map[t] || map.Aviso;
+  }
+
+  function normalizeAnnouncement(a) {
+    const title = String(a?.title ?? "").trim();
+    const body = String(a?.body ?? "").trim();
+    const tag = String(a?.tag ?? "Aviso").trim() || "Aviso";
+    const id = String(a?.id ?? "").trim() || generateId();
+    const createdAt = String(a?.createdAt ?? new Date().toISOString());
+    if (!title || !body) return null;
+    return { id, title, body, tag, createdAt };
+  }
+
+  function ensureAnnouncementsSeeded() {
+    // Migration from previous key (if exists).
+    const legacy = localStorage.getItem("schoolfix_announcements_v1");
+    if (legacy && !localStorage.getItem(ANNOUNCEMENTS_KEY)) {
+      try {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed)) {
+          const migrated = parsed.map((x) => normalizeAnnouncement(x)).filter(Boolean);
+          saveAnnouncements(migrated);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const existing = loadAnnouncements().map((x) => normalizeAnnouncement(x)).filter(Boolean);
+    if (existing.length) {
+      saveAnnouncements(existing);
+      return existing;
+    }
+
+    const seeded = defaultAnnouncements.map((x) =>
+      normalizeAnnouncement({ ...x, id: generateId(), createdAt: new Date().toISOString() })
+    );
+    saveAnnouncements(seeded);
+    return seeded;
+  }
+
+  function generateRandomAnnouncements(count) {
+    const tags = ["Evento", "Servicios", "Convocatoria", "Taller", "Académico", "Aviso", "Club"];
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const day = () => {
+      const d = new Date();
+      d.setDate(d.getDate() + (1 + Math.floor(Math.random() * 8)));
+      return d.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" });
+    };
+    const time = () => {
+      const h = 8 + Math.floor(Math.random() * 10);
+      const m = Math.random() < 0.5 ? "00" : "30";
+      return `${String(h).padStart(2, "0")}:${m}`;
+    };
+    const places = ["salón de actos", "aula multimedia", "Lab 1", "Lab 2", "biblioteca", "patio central", "coordinación"];
+    const templates = {
+      Evento: () => ({
+        title: `Evento escolar — ${day()}`,
+        body: `Actividad programada a las ${time()} en ${pick(places)}. Llega 10 minutos antes.`,
+      }),
+      Servicios: () => ({
+        title: "Servicios escolares: aviso importante",
+        body: `Atención en ${pick(["biblioteca", "coordinación", "prefectura"])} disponible hoy hasta las ${time()}.`,
+      }),
+      Convocatoria: () => ({
+        title: "Convocatoria abierta",
+        body: `Participa en la convocatoria de esta semana. Entrega tu registro antes del ${day()} en coordinación.`,
+      }),
+      Taller: () => ({
+        title: "Taller disponible",
+        body: `Taller práctico el ${day()} a las ${time()} en ${pick(["aula multimedia", "Lab 1", "Lab 2"])}. Cupo limitado.`,
+      }),
+      "Académico": () => ({
+        title: "Aviso académico",
+        body: `Revisión de avances y dudas el ${day()} a las ${time()}. Consulta con tu docente para el salón asignado.`,
+      }),
+      Aviso: () => ({
+        title: "Aviso general",
+        body: `Recuerda portar tu credencial y revisar el tablero de anuncios. Actualización vigente desde ${day()}.`,
+      }),
+      Club: () => ({
+        title: "Club: reunión",
+        body: `Reunión de club el ${day()} a las ${time()} en ${pick(["Lab 1", "biblioteca", "aula multimedia"])}. Nuevos integrantes bienvenidos.`,
+      }),
+    };
+
+    const out = [];
+    for (let i = 0; i < count; i += 1) {
+      const tag = pick(tags);
+      const content = templates[tag]();
+      out.push(
+        normalizeAnnouncement({
+          id: generateId(),
+          tag,
+          title: content.title,
+          body: content.body,
+          createdAt: new Date().toISOString(),
+        })
+      );
+    }
+    return out.filter(Boolean);
+  }
+
+  function addRandomAnnouncementsOnBoot() {
+    const existing = ensureAnnouncementsSeeded();
+    const n = 2 + Math.floor(Math.random() * 2); // 2–3
+    const generated = generateRandomAnnouncements(n);
+    const merged = [...generated, ...existing];
+    // Deduplicate by id (just in case).
+    const seen = new Set();
+    const unique = merged.filter((x) => {
+      if (!x?.id || seen.has(x.id)) return false;
+      seen.add(x.id);
+      return true;
+    });
+    saveAnnouncements(unique);
+    return unique;
   }
 
   function loadTasks() {
@@ -500,26 +610,25 @@
   function renderAnnouncements() {
     const container = document.getElementById("announcementsList");
     if (!container) return;
-    const list = allAnnouncements();
+    const list = loadAnnouncements()
+      .map((x) => normalizeAnnouncement(x))
+      .filter(Boolean)
+      .sort((a, b) => toEpoch(b.createdAt) - toEpoch(a.createdAt));
     container.innerHTML = list
       .map(
         (a) => `
       <article class="rounded-2xl border border-school-border bg-school-panel/70 p-5 shadow-card transition hover:border-sky-500/20">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
-            <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">${escapeHtml(a.tag)}</span>
+            <span class="rounded-full border px-2.5 py-0.5 text-xs font-semibold ${tagStyles(a.tag)}">${escapeHtml(a.tag)}</span>
             <h3 class="min-w-0 text-lg font-semibold text-white">${escapeHtml(a.title)}</h3>
           </div>
-          ${
-            a._source === "user" && a.id
-              ? `<button type="button" class="announcement-delete-btn inline-flex items-center gap-2 rounded-xl border border-school-border bg-school-navy/40 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-red-500/40 hover:text-white" data-announcement-delete="${escapeHtml(
-                  a.id
-                )}" aria-label="Eliminar anuncio">
-                  <span aria-hidden="true">🗑️</span>
-                  <span>Eliminar</span>
-                </button>`
-              : ""
-          }
+          <button type="button" class="announcement-delete-btn inline-flex items-center gap-2 rounded-xl border border-school-border bg-school-navy/40 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-red-500/40 hover:text-white" data-announcement-delete="${escapeHtml(
+            a.id
+          )}" aria-label="Eliminar anuncio">
+            <span aria-hidden="true">🗑️</span>
+            <span>Eliminar</span>
+          </button>
         </div>
         <p class="mt-2 text-sm leading-relaxed text-slate-400">${escapeHtml(a.body)}</p>
       </article>`
@@ -530,8 +639,8 @@
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-announcement-delete");
         if (!id) return;
-        const next = loadUserAnnouncements().filter((x) => x.id !== id);
-        saveUserAnnouncements(next);
+        const next = loadAnnouncements().filter((x) => x.id !== id);
+        saveAnnouncements(next);
         showToast("Anuncio eliminado");
         renderAnnouncements();
       });
@@ -540,12 +649,12 @@
     const home = document.getElementById("homeAnnouncementsList");
     if (home) {
       home.innerHTML = list
-        .slice(0, 2)
+        .slice(0, 3)
         .map(
           (a) => `
       <article class="rounded-2xl border border-school-border bg-school-panel/60 p-4 shadow-card transition hover:border-sky-500/20">
         <div class="flex items-center gap-2">
-          <span class="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">${escapeHtml(a.tag)}</span>
+          <span class="rounded-full border px-2.5 py-0.5 text-xs font-semibold ${tagStyles(a.tag)}">${escapeHtml(a.tag)}</span>
           <h3 class="text-sm font-semibold text-white">${escapeHtml(a.title)}</h3>
         </div>
         <p class="mt-2 text-sm text-slate-400">${escapeHtml(a.body)}</p>
@@ -574,13 +683,34 @@
           <label for="announcementTitle" class="block text-xs font-medium text-slate-400">Título</label>
           <input id="announcementTitle" name="title" type="text" required
             class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
-            placeholder="Ej. Cambio de salón en 2°B" />
+            placeholder="Agrega título" />
         </div>
         <div>
-          <label for="announcementTag" class="block text-xs font-medium text-slate-400">Etiqueta</label>
-          <input id="announcementTag" name="tag" type="text" required
-            class="mt-1.5 w-full rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
-            placeholder="Aviso" />
+          <label class="block text-xs font-medium text-slate-400">Etiqueta</label>
+          <div class="relative mt-1.5">
+            <input type="hidden" id="announcementTag" name="tag" value="Aviso" />
+            <button type="button" id="announcementTagBtn"
+              class="flex w-full items-center justify-between gap-2 rounded-xl border border-school-border bg-school-navy px-4 py-2.5 text-sm font-semibold text-slate-200 outline-none transition hover:border-emerald-500/30">
+              <span class="flex items-center gap-2">
+                <span id="announcementTagDot" class="inline-block h-2.5 w-2.5 rounded-full bg-slate-400"></span>
+                <span id="announcementTagLabel">Aviso</span>
+              </span>
+              <span class="text-slate-500" aria-hidden="true">▾</span>
+            </button>
+            <div id="announcementTagMenu" class="absolute left-0 right-0 top-[calc(100%+0.5rem)] hidden overflow-hidden rounded-2xl border border-school-border bg-school-panel/95 shadow-card backdrop-blur-md">
+              <div class="grid gap-1 p-2">
+                ${["Evento","Servicios","Convocatoria","Taller","Académico","Aviso","Club"]
+                  .map(
+                    (t) =>
+                      `<button type="button" class="tag-option flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-200 transition hover:bg-school-navy/40" data-tag="${t}">
+                        <span class="inline-block h-2.5 w-2.5 rounded-full"></span>
+                        <span>${t}</span>
+                      </button>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+          </div>
         </div>
         <div>
           <label for="announcementBody" class="block text-xs font-medium text-slate-400">Descripción</label>
@@ -601,23 +731,93 @@
     container.parentElement?.insertBefore(wrap, container);
 
     const form = document.getElementById("announcementForm");
+    const tagBtn = document.getElementById("announcementTagBtn");
+    const tagMenu = document.getElementById("announcementTagMenu");
+    const tagLabel = document.getElementById("announcementTagLabel");
+    const tagHidden = document.getElementById("announcementTag");
+    const tagDot = document.getElementById("announcementTagDot");
+
+    const setTag = (tag) => {
+      const t = String(tag || "Aviso");
+      if (tagHidden) tagHidden.value = t;
+      if (tagLabel) tagLabel.textContent = t;
+      if (tagDot) {
+        const cls = tagStyles(t);
+        // Extract a usable dot color
+        const dotMap = {
+          Evento: "bg-sky-400",
+          Servicios: "bg-emerald-400",
+          Convocatoria: "bg-violet-400",
+          Taller: "bg-amber-400",
+          "Académico": "bg-blue-400",
+          Aviso: "bg-slate-400",
+          Club: "bg-pink-400",
+        };
+        tagDot.className = `inline-block h-2.5 w-2.5 rounded-full ${dotMap[t] || "bg-slate-400"}`;
+        void cls;
+      }
+    };
+
+    const toggleMenu = (open) => {
+      if (!tagMenu) return;
+      const isOpen = !tagMenu.classList.contains("hidden");
+      const next = typeof open === "boolean" ? open : !isOpen;
+      tagMenu.classList.toggle("hidden", !next);
+    };
+
+    tagBtn?.addEventListener("click", () => toggleMenu());
+    window.addEventListener("click", (e) => {
+      if (!tagMenu || !tagBtn) return;
+      if (tagMenu.classList.contains("hidden")) return;
+      const target = e.target;
+      if (tagMenu.contains(target) || tagBtn.contains(target)) return;
+      toggleMenu(false);
+    });
+
+    tagMenu?.querySelectorAll("[data-tag]").forEach((btn) => {
+      const t = btn.getAttribute("data-tag") || "Aviso";
+      const dot = btn.querySelector("span");
+      if (dot) {
+        const dotMap = {
+          Evento: "bg-sky-400",
+          Servicios: "bg-emerald-400",
+          Convocatoria: "bg-violet-400",
+          Taller: "bg-amber-400",
+          "Académico": "bg-blue-400",
+          Aviso: "bg-slate-400",
+          Club: "bg-pink-400",
+        };
+        dot.className = `inline-block h-2.5 w-2.5 rounded-full ${dotMap[t] || "bg-slate-400"}`;
+      }
+      btn.addEventListener("click", () => {
+        setTag(t);
+        toggleMenu(false);
+      });
+    });
+    setTag(String(tagHidden?.value ?? "Aviso"));
+
     form?.addEventListener("submit", (e) => {
       e.preventDefault();
       const title = String(document.getElementById("announcementTitle")?.value ?? "").trim();
-      const tag = String(document.getElementById("announcementTag")?.value ?? "").trim();
+      const tag = String(document.getElementById("announcementTag")?.value ?? "Aviso").trim() || "Aviso";
       const body = String(document.getElementById("announcementBody")?.value ?? "").trim();
       if (!title || !tag || !body) return;
 
-      const user = loadUserAnnouncements();
-      user.unshift({
-        id: generateId(),
-        title,
-        tag,
-        body,
-        createdAt: new Date().toISOString(),
-      });
-      saveUserAnnouncements(user);
+      const all = loadAnnouncements()
+        .map((x) => normalizeAnnouncement(x))
+        .filter(Boolean);
+      all.unshift(
+        normalizeAnnouncement({
+          id: generateId(),
+          title,
+          tag,
+          body,
+          createdAt: new Date().toISOString(),
+        })
+      );
+      saveAnnouncements(all.filter(Boolean));
       form.reset();
+      setTag("Aviso");
       showToast("Anuncio agregado");
       renderAnnouncements();
     });
@@ -1015,6 +1215,7 @@
     seedTasksIfEmpty();
     seedExamsIfEmpty();
     classesToday = generateRandomSchedule();
+    addRandomAnnouncementsOnBoot();
     renderClasses();
     renderExams();
     renderAnnouncements();
