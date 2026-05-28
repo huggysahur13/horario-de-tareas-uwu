@@ -4,7 +4,10 @@
   const STORAGE_KEY = "schoolfix_tasks_v1";
   const EXAMS_KEY = "schoolfix_exams_v1";
   const THEME_KEY = "schoolfix_theme";
+  const PROFILE_KEY = "schoolfix_profile_v1";
   let currentProfile = null;
+  let currentView = "home";
+  let showToastTimeoutId = null;
 
   const todayISO = () => {
     const d = new Date();
@@ -150,6 +153,25 @@
     modal.classList.remove("flex");
   }
 
+  function loadProfile() {
+    try {
+      const raw = localStorage.getItem(PROFILE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const name = String(parsed.name ?? "").trim();
+      const studentId = String(parsed.studentId ?? "").trim();
+      if (!name) return null;
+      return { name, studentId };
+    } catch {
+      return null;
+    }
+  }
+
+  function saveProfile(profile) {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  }
+
   function ensureProfile() {
     return new Promise((resolve) => {
       const form = document.getElementById("profileForm");
@@ -171,6 +193,7 @@
 
         const profile = { name, studentId };
         currentProfile = profile;
+        saveProfile(profile);
         hideProfileModal();
         form?.removeEventListener("submit", onSubmit);
         resolve(profile);
@@ -178,6 +201,37 @@
 
       form?.addEventListener("submit", onSubmit);
     });
+  }
+
+  function ensureProfileIfMissing() {
+    const stored = loadProfile();
+    if (stored?.name) {
+      currentProfile = stored;
+      return Promise.resolve(stored);
+    }
+    return ensureProfile();
+  }
+
+  function showToast(message) {
+    const text = String(message ?? "").trim();
+    if (!text) return;
+
+    let el = document.getElementById("toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast";
+      el.className =
+        "fixed bottom-24 left-1/2 z-[70] hidden -translate-x-1/2 rounded-2xl border border-school-border bg-school-panel/90 px-4 py-3 text-sm font-semibold text-white shadow-card backdrop-blur-md";
+      document.body.appendChild(el);
+    }
+
+    el.textContent = text;
+    el.classList.remove("hidden");
+
+    if (showToastTimeoutId) window.clearTimeout(showToastTimeoutId);
+    showToastTimeoutId = window.setTimeout(() => {
+      el?.classList.add("hidden");
+    }, 1600);
   }
 
   function renderClasses() {
@@ -326,9 +380,8 @@
     return div.innerHTML;
   }
 
-  function countPendingToday(tasks) {
-    const t = todayISO();
-    return tasks.filter((x) => x.date === t && !x.completed).length;
+  function countPending(tasks) {
+    return tasks.filter((x) => !x.completed).length;
   }
 
   function updateHero(tasks, profile) {
@@ -337,7 +390,7 @@
     const meta = document.getElementById("heroStudentMeta");
     if (meta) meta.textContent = profile?.studentId ? `Matrícula: ${profile.studentId}` : "";
     const pending = document.getElementById("pendingCount");
-    if (pending) pending.textContent = String(countPendingToday(tasks));
+    if (pending) pending.textContent = String(countPending(tasks));
   }
 
   function renderTasks(tasks, profile) {
@@ -345,11 +398,11 @@
     const empty = document.getElementById("tasksEmpty");
     if (!container) return;
 
-    const t = todayISO();
-    const todayTasks = tasks.filter((x) => x.date === t);
-    const sorted = [...todayTasks].sort((a, b) => {
+    const sorted = [...tasks].sort((a, b) => {
       if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      return a.title.localeCompare(b.title);
+      const dateCmp = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCmp !== 0) return dateCmp;
+      return String(a.title || "").localeCompare(String(b.title || ""));
     });
 
     if (sorted.length === 0) {
@@ -447,6 +500,7 @@
       form.reset();
       if (dateInput) dateInput.value = todayISO();
       refresh(currentProfile);
+      showToast("Tarea agregada");
     });
   }
 
@@ -474,6 +528,7 @@
       form.reset();
       if (dateInput) dateInput.value = todayISO();
       renderExams();
+      showToast("Examen agregado");
     });
   }
 
@@ -508,6 +563,16 @@
     });
   }
 
+  function initLogout() {
+    document.getElementById("logoutBtn")?.addEventListener("click", () => {
+      try {
+        localStorage.clear();
+      } finally {
+        window.location.reload();
+      }
+    });
+  }
+
   function initBottomNav() {
     const buttons = Array.from(document.querySelectorAll(".nav-btn"));
     if (!buttons.length) return;
@@ -525,6 +590,7 @@
         if (!el) return;
         el.classList.toggle("hidden", name !== k);
       });
+      currentView = k;
       setActive(k);
       history.replaceState(null, "", `#${k}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -554,13 +620,24 @@
     document.querySelectorAll("[data-nav]").forEach((el) => {
       el.addEventListener("click", () => showView(el.getAttribute("data-nav")));
     });
+
+    window.addEventListener("hashchange", () => {
+      const next = String(location.hash || "#home").replace(/^#/, "");
+      showView(views[next] ? next : "home");
+    });
   }
 
   function initFab() {
     document.getElementById("fabAdd")?.addEventListener("click", () => {
-      const btn = document.querySelector('.nav-btn[data-view="tasks"]');
-      btn?.dispatchEvent(new Event("click"));
-      setTimeout(() => document.getElementById("taskTitle")?.focus(), 0);
+      const go = (view, focusId) => {
+        const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
+        btn?.dispatchEvent(new Event("click"));
+        setTimeout(() => document.getElementById(focusId)?.focus(), 0);
+      };
+
+      if (currentView === "exams") return go("exams", "examSubject");
+      if (currentView === "tasks") return go("tasks", "taskTitle");
+      return go("tasks", "taskTitle");
     });
   }
 
@@ -605,7 +682,7 @@
 
   async function boot() {
     initLightModeStyles();
-    const profile = await ensureProfile();
+    const profile = await ensureProfileIfMissing();
     seedTasksIfEmpty();
     seedExamsIfEmpty();
     renderClasses();
@@ -615,6 +692,7 @@
     initExamForm();
     initTheme();
     initThemeToggle();
+    initLogout();
     initBottomNav();
     initFab();
     refresh(profile);
