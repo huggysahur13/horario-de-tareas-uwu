@@ -310,7 +310,7 @@
       saveSchedule(loaded);
       return loaded;
     }
-    const fresh = generateRandomWeeklySchedule();
+    const fresh = buildEmptySchedule();
     saveSchedule(fresh);
     return fresh;
   }
@@ -323,17 +323,6 @@
     const b = parseInt(c.slice(4, 6), 16);
     const yiq = (r * 299 + g * 587 + b * 114) / 1000;
     return yiq >= 160 ? "#0b1220" : "#0b1220";
-  }
-
-  function scheduleRows() {
-    const rows = [];
-    let period = 1;
-    for (let i = 1; i <= schedulePeriods; i += 1) {
-      rows.push({ type: "period", label: `Periodo ${period}`, periodIndex: period - 1 });
-      if (i === 3 || i === 6) rows.push({ type: "break", label: "Receso" });
-      period += 1;
-    }
-    return rows;
   }
 
   function openScheduleEditor({ day, periodIndex, initial }) {
@@ -389,7 +378,7 @@
     const palette = softColors();
     let chosen = existing.color || pick(palette);
 
-    if (meta) meta.textContent = `${day} · Periodo ${periodIndex + 1}`;
+    if (meta) meta.textContent = `${day} · Hora ${periodIndex + 1}`;
     if (nameInput) nameInput.value = existing.name || "";
     if (colorsWrap) {
       colorsWrap.innerHTML = palette
@@ -469,13 +458,12 @@
     if (!host) return;
     const schedule = ensureSchedule();
 
-    const rows = scheduleRows();
     const table = `
       <div class="overflow-x-auto">
         <table class="w-full min-w-[720px] border-separate border-spacing-2">
           <thead>
             <tr>
-              <th class="w-28 rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Periodo</th>
+              <th class="w-28 rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Hora</th>
               ${scheduleDays
                 .map(
                   (d) =>
@@ -485,35 +473,20 @@
             </tr>
           </thead>
           <tbody>
-            ${rows
-              .map((r) => {
-                if (r.type === "break") {
-                  return `
-                    <tr>
-                      <td class="rounded-xl border border-school-border bg-school-navy/30 px-3 py-3 text-xs font-semibold text-slate-500">${r.label}</td>
-                      ${scheduleDays
-                        .map(
-                          () =>
-                            `<td class="rounded-xl border border-school-border bg-school-navy/30 px-3 py-3 text-xs font-semibold text-slate-500/80">${r.label}</td>`
-                        )
-                        .join("")}
-                    </tr>
-                  `;
-                }
-
-                const pi = r.periodIndex;
+            ${Array.from({ length: schedulePeriods }, (_, idx) => idx)
+              .map((pi) => {
                 return `
                   <tr>
-                    <td class="rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-sm font-semibold text-slate-300">${r.label}</td>
+                    <td class="rounded-xl border border-school-border bg-school-navy/40 px-3 py-3 text-sm font-semibold text-slate-300">Hora ${pi + 1}</td>
                     ${scheduleDays
                       .map((d) => {
                         const cell = normalizeCell(schedule.grid?.[d]?.[pi]);
                         const bg = cell.color || "";
-                        const name = cell.name || "—";
+                        const name = cell.name || "";
                         const style = bg ? `background:${bg}; color:${fgFor(bg)};` : "";
                         const baseCls =
                           "schedule-cell group relative min-h-[54px] rounded-xl border border-school-border px-3 py-3 text-sm font-semibold transition hover:border-sky-500/30 focus:outline-none focus:ring-2 focus:ring-sky-500/20";
-                        const emptyCls = bg ? "" : "bg-school-panel/50 text-slate-400";
+                        const emptyCls = bg ? "" : "bg-school-panel/50 text-slate-200/80";
                         return `
                           <td>
                             <button type="button" class="${baseCls} ${emptyCls} w-full text-left"
@@ -550,7 +523,7 @@
   function initScheduleUI() {
     document.getElementById("resetScheduleBtn")?.addEventListener("click", () => {
       localStorage.removeItem(SCHEDULE_KEY);
-      const fresh = generateRandomWeeklySchedule();
+      const fresh = buildEmptySchedule();
       saveSchedule(fresh);
       renderWeeklySchedule();
       showToast("Horario reseteado");
